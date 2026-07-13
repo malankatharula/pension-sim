@@ -5,63 +5,113 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
-
-// ── Dummy results (Phase 2: replace with real engine output) ──
-const DUMMY = {
-  planName: 'Retirement at 50',
-  ageRange: '25–50',
-  totalPeriods: 5,
-  totalContributed: 'LKR 13,500,000',
-
-  conservativeCorpus: 'LKR 27.19M',
-  optimisticCorpus:   'LKR 47.73M',
-  dualVehicleCorpus:  'LKR 60.01M',
-  realValue:          'LKR 3.23M',
-
-  chainedTable: [
-    { period: 'P1', age: '25–30', monthly: '25,000', contributed: '1,500,000', interest: '244,251',   closing: '1,744,251'  },
-    { period: 'P2', age: '30–35', monthly: '35,000', contributed: '2,100,000', interest: '950,433',   closing: '4,794,684'  },
-    { period: 'P3', age: '35–40', monthly: '45,000', contributed: '2,700,000', interest: '2,112,278', closing: '9,606,962'  },
-    { period: 'P4', age: '40–45', monthly: '55,000', contributed: '3,300,000', interest: '3,888,742', closing: '16,795,703' },
-    { period: 'P5', age: '45–50', monthly: '65,000', contributed: '3,900,000', interest: '6,494,236', closing: '27,189,939' },
-  ],
-
-  dualVehicleTable: [
-    { period: 'P1', age: '25–30', fdGrowth: '0',          liquid: '1,893,543',  combined: '1,893,543'  },
-    { period: 'P2', age: '30–35', fdGrowth: '3,434,788',  liquid: '2,644,307',  combined: '6,079,095'  },
-    { period: 'P3', age: '35–40', fdGrowth: '11,022,198', liquid: '3,395,072',  combined: '14,417,270' },
-    { period: 'P4', age: '40–45', fdGrowth: '26,136,084', liquid: '4,145,836',  combined: '30,281,920' },
-    { period: 'P5', age: '45–50', fdGrowth: '54,924,491', liquid: '4,896,601',  combined: '60,821,092' },
-  ],
-
-  monteCarlo: {
-    p5:  27.2, p25: 37.0, p50: 47.8, p75: 62.6, p95: 93.0,
-  },
-
-  sensitivity: [
-    { variable: 'Annual interest rate',      base: '6%',          range: '4%–12%',    low: 21.1, high: 65.0, impact: 'Very High'   },
-    { variable: 'Starting monthly savings',  base: 'LKR 25,000',  range: '±LKR 10K',  low: 20.3, high: 37.6, impact: 'High'        },
-    { variable: 'Savings step-up per period',base: 'LKR 10K step',range: '5K–20K',    low: 22.3, high: 37.1, impact: 'Medium-High' },
-    { variable: 'FD lock rate',              base: '12%',         range: '8%–15%',    low: 34.8, high: 95.5, impact: 'High'        },
-    { variable: 'Inflation rate',            base: '8.9%',        range: '4%–15%',    low:  5.7, high:  3.2, impact: 'High'        },
-  ],
-
-  inflationTable: [
-    { rate: '4%',        realValue: '375,117',  retained: '37.5%' },
-    { rate: '8.9% (baseline)', realValue: '118,660', retained: '11.9%' },
-    { rate: '15%',       realValue: '30,378',   retained: '3.0%'  },
-    { rate: '20% (crisis)',    realValue: '10,483',  retained: '1.0%'  },
-  ],
-};
+import { useSimulationStore } from '../../src/store/simulationStore';
+import { erosionScenarios } from '../../src/engine';
 
 const IMPACT_COLOR: Record<string, string> = {
   'Very High':   '#DC2626',
   'High':        '#F59E0B',
   'Medium-High': '#3B82F6',
   'Medium':      '#8B5CF6',
+  'Low':         '#10B981',
 };
 
+const fmtNum = (n: number) => Math.round(n).toLocaleString();
+const fmtM = (n: number) => (n / 1e6).toFixed(2);
+
 export default function SimulationResultsScreen() {
+  const { current, planName } = useSimulationStore();
+
+  if (!current) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.emptyState}>
+          <Ionicons name="calculator-outline" size={48} color={COLORS.textMuted} />
+          <Text style={styles.emptyTitle}>No simulation to show</Text>
+          <Text style={styles.emptyText}>Run a simulation first to see your results here.</Text>
+          <TouchableOpacity
+            style={styles.emptyBtn}
+            onPress={() => router.push('/simulation/new')}
+          >
+            <Text style={styles.emptyBtnText}>New Simulation</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const { input } = current;
+  const years = input.payments.length * 5;
+
+  const conservativeCorpus = `LKR ${fmtM(current.conservative.finalNominal)}M`;
+  const optimisticCorpus   = `LKR ${fmtM(current.optimistic.finalNominal)}M`;
+  const dualVehicleCorpus  = `LKR ${fmtM(current.dualVehicle.finalNominal)}M`;
+  const realValue          = `LKR ${fmtM(current.conservative.realFinal)}M`;
+
+  const ageRange = `${input.startingAge}–${input.retirementAge}`;
+  const totalPeriods = input.payments.length;
+  const totalContributed = `LKR ${fmtNum(current.conservative.totalContributed)}`;
+
+  const chainedTable = current.conservative.periods.map((p) => ({
+    period: `P${p.period}`,
+    age: `${p.ageStart}–${p.ageEnd}`,
+    monthly: fmtNum(p.monthlyPayment),
+    contributed: fmtNum(p.totalContributed),
+    interest: fmtNum(p.interestEarned),
+    closing: fmtNum(p.closingBalance),
+  }));
+
+  const dualVehicleTable = current.dualVehicle.periods.map((p) => ({
+    period: `P${p.period}`,
+    age: `${p.ageStart}–${p.ageEnd}`,
+    fdGrowth: fmtNum(p.fdCorpusGrowth),
+    liquid: fmtNum(p.liquidAccumulation),
+    combined: fmtNum(p.combinedBalance),
+  }));
+
+  const mc = current.monteCarlo;
+  const mcMax = Math.max(1, mc.p95);
+
+  const sensitivity = current.sensitivity.map((r) => ({
+    variable: r.variable,
+    base: r.baseValue,
+    range: r.range,
+    low: r.lowOutcome,
+    high: r.highOutcome,
+    impact: r.impact,
+  }));
+// Inflation rate measures real (inflation-adjusted) value, a different scale
+// from the other rows which measure nominal corpus — so it gets its own max.
+const nominalRows = sensitivity.filter((r) => r.variable !== 'Inflation rate');
+const tornadoMax = Math.max(
+  1,
+  ...nominalRows.flatMap((r) => [Math.abs(r.low), Math.abs(r.high)])
+);
+
+const inflationRow = sensitivity.find((r) => r.variable === 'Inflation rate');
+const inflationMax = inflationRow
+  ? Math.max(1, Math.abs(inflationRow.low), Math.abs(inflationRow.high))
+  : 1;
+
+  const erosion = erosionScenarios(1_000_000, years, [0.04, input.inflationRate, 0.15, 0.20]);
+  const inflationTable = erosion.map((s, i) => ({
+    rate: i === 1
+      ? `${(s.rate * 100).toFixed(1)}% (baseline)`
+      : i === 3
+      ? `${(s.rate * 100).toFixed(0)}% (crisis)`
+      : `${(s.rate * 100).toFixed(0)}%`,
+    realValue: fmtNum(s.result.realValue),
+    retained: `${s.result.percentRetained}%`,
+  }));
+
+  const interestMultiplier = (
+    current.optimistic.totalInterest / current.optimistic.totalContributed
+  ).toFixed(1);
+  const interestPercent = Math.round(
+    (current.optimistic.totalInterest / current.optimistic.finalNominal) * 100
+  );
+  const dualVehicleDiff = fmtM(current.dualVehicle.finalNominal - current.conservative.finalNominal);
+
   return (
     <SafeAreaView style={styles.safe}>
       {/* Header */}
@@ -69,7 +119,7 @@ export default function SimulationResultsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={COLORS.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{DUMMY.planName}</Text>
+        <Text style={styles.headerTitle}>{planName}</Text>
         <View style={{ width: 36 }} />
       </View>
 
@@ -77,28 +127,29 @@ export default function SimulationResultsScreen() {
 
         {/* ── Section 1: Metric Cards ── */}
         <View style={styles.metricsGrid}>
-          <MetricCard label="Conservative (6%)"  value={DUMMY.conservativeCorpus} color={COLORS.primary} />
-          <MetricCard label="Optimistic (10%)"   value={DUMMY.optimisticCorpus}   color={COLORS.success} />
-          <MetricCard label="FD Dual-Vehicle"    value={DUMMY.dualVehicleCorpus}  color="#8B5CF6" />
-          <MetricCard label="Real Value (adj.)"  value={DUMMY.realValue}          color={COLORS.warning} />
+          <MetricCard label={`Conservative (${(input.annualRateConservative * 100).toFixed(0)}%)`} value={conservativeCorpus} color={COLORS.primary} />
+          <MetricCard label={`Optimistic (${(input.annualRateOptimistic * 100).toFixed(0)}%)`} value={optimisticCorpus} color={COLORS.success} />
+          <MetricCard label="FD Dual-Vehicle" value={dualVehicleCorpus} color="#8B5CF6" />
+          <MetricCard label="Real Value (adj.)" value={realValue} color={COLORS.warning} />
         </View>
 
         <Text style={styles.subHeader}>
-          {DUMMY.ageRange} · {DUMMY.totalPeriods} periods · {DUMMY.totalContributed} contributed
+          {ageRange} · {totalPeriods} periods · {totalContributed} contributed
         </Text>
 
-        {/* ── Section 2: Corpus Growth (placeholder chart) ── */}
+        {/* ── Section 2: Corpus Growth (placeholder chart, real values on bars) ── */}
         <SectionHeader title="Corpus Growth" icon="trending-up-outline" />
         <View style={styles.chartPlaceholder}>
           <View style={styles.chartBars}>
-            {[17, 33, 54, 78, 100].map((pct, i) => (
-              <View key={i} style={styles.chartBarCol}>
-                <View style={[styles.chartBar, { height: `${pct}%` }]} />
-                <Text style={styles.chartBarLabel}>
-                  {['30', '35', '40', '45', '50'][i]}
-                </Text>
-              </View>
-            ))}
+            {current.conservative.periods.map((p, i) => {
+              const pct = Math.max(4, (p.closingBalance / current.optimistic.finalNominal) * 100);
+              return (
+                <View key={i} style={styles.chartBarCol}>
+                  <View style={[styles.chartBar, { height: `${pct}%` }]} />
+                  <Text style={styles.chartBarLabel}>{p.ageEnd}</Text>
+                </View>
+              );
+            })}
           </View>
           <View style={styles.chartLegend}>
             {[
@@ -115,7 +166,7 @@ export default function SimulationResultsScreen() {
         </View>
 
         {/* ── Section 3: Chained Annuity Table ── */}
-        <SectionHeader title="Chained Annuity (Conservative 6%)" icon="calculator-outline" />
+        <SectionHeader title={`Chained Annuity (Conservative ${(input.annualRateConservative * 100).toFixed(0)}%)`} icon="calculator-outline" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           <View>
             <View style={[styles.tableRow, styles.tableHeader]}>
@@ -123,7 +174,7 @@ export default function SimulationResultsScreen() {
                 <Text key={h} style={styles.thCell}>{h}</Text>
               ))}
             </View>
-            {DUMMY.chainedTable.map((row, i) => (
+            {chainedTable.map((row, i) => (
               <View key={i} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
                 <Text style={styles.tdCell}>{row.period}</Text>
                 <Text style={styles.tdCell}>{row.age}</Text>
@@ -135,16 +186,16 @@ export default function SimulationResultsScreen() {
             ))}
             <View style={[styles.tableRow, styles.tableTotalRow]}>
               <Text style={styles.totalCell}>TOTAL</Text>
-              <Text style={styles.totalCell}>25–50</Text>
+              <Text style={styles.totalCell}>{ageRange}</Text>
               <Text style={styles.totalCell}>—</Text>
-              <Text style={styles.totalCell}>13,500,000</Text>
-              <Text style={styles.totalCell}>13,689,939</Text>
-              <Text style={styles.totalCell}>27,189,939</Text>
+              <Text style={styles.totalCell}>{fmtNum(current.conservative.totalContributed)}</Text>
+              <Text style={styles.totalCell}>{fmtNum(current.conservative.totalInterest)}</Text>
+              <Text style={styles.totalCell}>{fmtNum(current.conservative.finalNominal)}</Text>
             </View>
           </View>
         </ScrollView>
 
-        <InsightBox text="At 10% p.a., interest earned (LKR 34.23M) is 2.5× what you deposited. Compound interest does 71.7% of the work." />
+        <InsightBox text={`At ${(input.annualRateOptimistic * 100).toFixed(0)}%, interest earned (LKR ${fmtM(current.optimistic.totalInterest)}M) is ${interestMultiplier}× what you deposited. Compound interest does ${interestPercent}% of the work.`} />
 
         {/* ── Section 4: Dual-Vehicle Table ── */}
         <SectionHeader title="Dual-Vehicle FD Breakdown" icon="git-branch-outline" />
@@ -155,7 +206,7 @@ export default function SimulationResultsScreen() {
                 <Text key={h} style={styles.thCell}>{h}</Text>
               ))}
             </View>
-            {DUMMY.dualVehicleTable.map((row, i) => (
+            {dualVehicleTable.map((row, i) => (
               <View key={i} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
                 <Text style={styles.tdCell}>{row.period}</Text>
                 <Text style={styles.tdCell}>{row.age}</Text>
@@ -167,75 +218,77 @@ export default function SimulationResultsScreen() {
           </View>
         </ScrollView>
 
-        <InsightBox text="The dual-vehicle model adds LKR 32.82M vs the conservative single-rate model. Locking the corpus at 12% FD rate is the key driver." />
+        <InsightBox text={`The dual-vehicle model adds LKR ${dualVehicleDiff}M vs the conservative single-rate model. Locking the corpus at ${(input.annualRateFdLock * 100).toFixed(0)}% FD rate is the key driver.`} />
 
         {/* ── Section 5: Monte Carlo ── */}
-        <SectionHeader title="Monte Carlo Distribution (5,000 runs)" icon="shuffle-outline" />
+        <SectionHeader title={`Monte Carlo Distribution (${input.mcIterations.toLocaleString()} runs)`} icon="shuffle-outline" />
         <View style={styles.mcBox}>
           {[
-            { label: 'Pessimistic (P5)',  value: DUMMY.monteCarlo.p5,  color: COLORS.error   },
-            { label: 'Lower (P25)',       value: DUMMY.monteCarlo.p25, color: COLORS.warning  },
-            { label: 'Median (P50)',      value: DUMMY.monteCarlo.p50, color: COLORS.primary  },
-            { label: 'Upper (P75)',       value: DUMMY.monteCarlo.p75, color: COLORS.success  },
-            { label: 'Optimistic (P95)',  value: DUMMY.monteCarlo.p95, color: '#8B5CF6'       },
+            { label: 'Pessimistic (P5)',  value: mc.p5,  color: COLORS.error   },
+            { label: 'Lower (P25)',       value: mc.p25, color: COLORS.warning  },
+            { label: 'Median (P50)',      value: mc.p50, color: COLORS.primary  },
+            { label: 'Upper (P75)',       value: mc.p75, color: COLORS.success  },
+            { label: 'Optimistic (P95)',  value: mc.p95, color: '#8B5CF6'       },
           ].map(({ label, value, color }) => (
             <View key={label} style={styles.mcRow}>
               <Text style={styles.mcLabel}>{label}</Text>
               <View style={styles.mcBarWrap}>
                 <View style={[
                   styles.mcBar,
-                  { width: `${(value / 93) * 100}%`, backgroundColor: color }
+                  { width: `${(value / mcMax) * 100}%`, backgroundColor: color }
                 ]} />
               </View>
-              <Text style={[styles.mcValue, { color }]}>LKR {value}M</Text>
+              <Text style={[styles.mcValue, { color }]}>LKR {value.toFixed(1)}M</Text>
             </View>
           ))}
         </View>
-        <InsightBox text="In 9 out of 10 simulated futures, your corpus lands between LKR 27.2M and LKR 93.0M. The median outcome is LKR 47.8M." />
+        <InsightBox text={`In 9 out of 10 simulated futures, your corpus lands between LKR ${mc.p5.toFixed(1)}M and LKR ${mc.p95.toFixed(1)}M. The median outcome is LKR ${mc.p50.toFixed(1)}M.`} />
 
         {/* ── Section 6: Sensitivity Tornado ── */}
         <SectionHeader title="Sensitivity Analysis" icon="bar-chart-outline" />
         <View style={styles.tornadoBox}>
-          {DUMMY.sensitivity.map((row, i) => {
-            const totalRange = row.high - Math.min(row.low, 0);
-            const maxRange = 95;
-            return (
-              <View key={i} style={styles.tornadoRow}>
-                <Text style={styles.tornadoVar} numberOfLines={1}>{row.variable}</Text>
-                <View style={styles.tornadoBarWrap}>
-                  <View style={[
-                    styles.tornadoBar,
-                    {
-                      width: `${(row.high / maxRange) * 100}%`,
-                      backgroundColor: IMPACT_COLOR[row.impact] ?? COLORS.primary,
-                      opacity: 0.85,
-                    }
-                  ]} />
-                  <View style={[
-                    styles.tornadoBarLow,
-                    { width: `${(row.low / maxRange) * 100}%` }
-                  ]} />
-                </View>
-                <Text style={[
-                  styles.tornadoImpact,
-                  { color: IMPACT_COLOR[row.impact] ?? COLORS.primary }
-                ]}>
-                  {row.impact}
-                </Text>
-              </View>
-            );
-          })}
+ {sensitivity.map((row, i) => {
+  const isInflation = row.variable === 'Inflation rate';
+  const rowMax = isInflation ? inflationMax : tornadoMax;
+  return (
+    <View key={i} style={styles.tornadoRow}>
+      <Text style={styles.tornadoVar} numberOfLines={1}>
+        {row.variable}{isInflation ? ' (real value, own scale)' : ''}
+      </Text>
+      <View style={styles.tornadoBarWrap}>
+        <View style={[
+          styles.tornadoBar,
+          {
+            width: `${(Math.abs(row.high) / rowMax) * 100}%`,
+            backgroundColor: IMPACT_COLOR[row.impact] ?? COLORS.primary,
+            opacity: 0.85,
+          }
+        ]} />
+        <View style={[
+          styles.tornadoBarLow,
+          { width: `${(Math.abs(row.low) / rowMax) * 100}%` }
+        ]} />
+      </View>
+      <Text style={[
+        styles.tornadoImpact,
+        { color: IMPACT_COLOR[row.impact] ?? COLORS.primary }
+      ]}>
+        {row.impact}
+      </Text>
+    </View>
+  );
+})}
         </View>
 
         {/* ── Section 7: Inflation Erosion ── */}
-        <SectionHeader title="Inflation Erosion (LKR 1M over 25 years)" icon="flame-outline" />
+        <SectionHeader title={`Inflation Erosion (LKR 1M over ${years} years)`} icon="flame-outline" />
         <View style={styles.card}>
           <View style={[styles.tableRow, styles.tableHeader]}>
             {['Inflation', 'Real Value of LKR 1M', '% Retained'].map(h => (
               <Text key={h} style={[styles.thCell, { flex: 1 }]}>{h}</Text>
             ))}
           </View>
-          {DUMMY.inflationTable.map((row, i) => (
+          {inflationTable.map((row, i) => (
             <View key={i} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
               <Text style={[styles.tdCell, { flex: 1 }]}>{row.rate}</Text>
               <Text style={[styles.tdCell, { flex: 1, color: COLORS.error, fontWeight: '700' }]}>
@@ -245,7 +298,7 @@ export default function SimulationResultsScreen() {
             </View>
           ))}
         </View>
-        <InsightBox text="At the 8.9% baseline, your LKR 27.2M nominal corpus has a real purchasing power of only LKR 3.23M. Your plan must beat inflation meaningfully." />
+        <InsightBox text={`At the ${(input.inflationRate * 100).toFixed(1)}% baseline, your ${conservativeCorpus} nominal corpus has a real purchasing power of only ${realValue}. Your plan must beat inflation meaningfully.`} />
 
         {/* ── Action Bar ── */}
         <View style={styles.actionBar}>
@@ -314,6 +367,18 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: FONT.lg, fontWeight: '700', color: COLORS.white },
 
   scroll: { flex: 1 },
+
+  emptyState: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    padding: 32, gap: 10,
+  },
+  emptyTitle: { fontSize: FONT.lg, fontWeight: '700', color: COLORS.textPrimary },
+  emptyText: { fontSize: FONT.md, color: COLORS.textSecondary, textAlign: 'center' },
+  emptyBtn: {
+    marginTop: 12, backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.sm, paddingVertical: 12, paddingHorizontal: 24,
+  },
+  emptyBtnText: { color: COLORS.white, fontWeight: '700', fontSize: FONT.base },
 
   // Metrics
   metricsGrid: {

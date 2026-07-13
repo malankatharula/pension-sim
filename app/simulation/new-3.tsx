@@ -6,6 +6,9 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
+import { runFullSimulation } from '../../src/engine';
+import { useSimulationStore } from '../../src/store/simulationStore';
+import type { SimulationInput } from '../../src/types/simulation';
 
 export default function NewSimulationStep3() {
   const params = useLocalSearchParams();
@@ -22,17 +25,36 @@ export default function NewSimulationStep3() {
   const [mcSigma, setMcSigma] = useState('2.50');
 
   const handleRunSimulation = () => {
-    // Phase 2: call runFullSimulation() here with real engine
-    // For now navigate to results with dummy params
-    router.push({
-      pathname: '/simulation/results',
-      params: {
-        ...params,
-        conservativeRate, optimisticRate,
-        fdLockRate, liquidRate, inflationRate,
-        whtRate, mcIterations, mcMu, mcSigma,
-      },
-    });
+    const startingAge = Number(params.startingAge ?? 25);
+    const retirementAge = Number(params.retirementAge ?? 50);
+    const planName = String(params.planName ?? 'My Plan');
+
+    let payments: number[] = [];
+    try {
+      payments = JSON.parse(String(params.payments ?? '[]'));
+    } catch {
+      payments = [25000, 35000, 45000, 55000, 65000];
+    }
+
+    const input: SimulationInput = {
+      startingAge,
+      retirementAge,
+      payments,
+      annualRateConservative: (Number(conservativeRate) || 0) / 100,
+      annualRateOptimistic: (Number(optimisticRate) || 0) / 100,
+      annualRateFdLock: (Number(fdLockRate) || 0) / 100,
+      annualRateLiquid: (Number(liquidRate) || 0) / 100,
+      inflationRate: (Number(inflationRate) || 0) / 100,
+      whtRate: (Number(whtRate) || 0) / 100,
+      mcIterations: Number(mcIterations) || 5000,
+      mcMu: (Number(mcMu) || 0) / 100,
+      mcSigma: (Number(mcSigma) || 0) / 100,
+    };
+
+    const result = runFullSimulation(input);
+    useSimulationStore.getState().setCurrent(result, planName);
+
+    router.push('/simulation/results');
   };
 
   return (
