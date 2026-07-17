@@ -5,9 +5,9 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
+import { useAuthStore } from '../../src/store/authStore';
 
-// ── Dummy data (Phase 2: replace with Supabase fetch) ──
-const DUMMY_USER = { firstName: 'Nadeesha' };
+
 
 const DUMMY_LATEST = {
   name: 'Retirement at 50',
@@ -33,6 +33,9 @@ const INSIGHTS = [
 const todayInsight = INSIGHTS[new Date().getDay() % INSIGHTS.length];
 
 export default function HomeScreen() {
+  const { profile, user } = useAuthStore();
+  const firstName = profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'there';
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -40,7 +43,7 @@ export default function HomeScreen() {
         {/* ── Header ── */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Hello, {DUMMY_USER.firstName} 👋</Text>
+            <Text style={styles.greeting}>Hello, {firstName} 👋</Text>
             <Text style={styles.greetingSub}>Your retirement plan is on track</Text>
           </View>
           <TouchableOpacity
