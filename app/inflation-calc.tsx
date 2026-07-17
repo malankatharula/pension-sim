@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../src/lib/theme';
+import { inflationErosion } from '../src/engine';
 
 const SCENARIOS = [
   { rate: 0.04,  label: '4%',         color: COLORS.success },
@@ -23,8 +24,9 @@ export default function InflationCalculatorScreen() {
   const yrs = Number(years) || 0;
   const r   = Number(rate) / 100;
 
-  const realValue = amt / Math.pow(1 + r, yrs);
-  const retained  = (realValue / amt) * 100;
+  const erosion = amt > 0 ? inflationErosion(amt, r, yrs) : { realValue: 0, percentRetained: 0 };
+  const realValue = erosion.realValue;
+  const retained  = erosion.percentRetained;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -107,9 +109,9 @@ export default function InflationCalculatorScreen() {
           <Text style={styles.cardTitle}>
             Scenario Comparison — LKR {Number(amount.replace(/,/g, '')).toLocaleString()} over {years} years
           </Text>
-          {SCENARIOS.map(({ rate: r, label, color }) => {
-            const rv = amt / Math.pow(1 + r, yrs);
-            const pct = (rv / amt) * 100;
+            {SCENARIOS.map(({ rate: scenarioRate, label, color }) => {
+            const scenarioResult = amt > 0 ? inflationErosion(amt, scenarioRate, yrs) : { realValue: 0, percentRetained: 0 };
+            const pct = scenarioResult.percentRetained;
             return (
               <View key={label} style={styles.scenarioRow}>
                 <Text style={styles.scenarioLabel}>{label}</Text>

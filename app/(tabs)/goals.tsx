@@ -5,6 +5,7 @@ import {
 import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
+import { allocateGoals } from '../../src/engine';
 
 const PRIORITIES = ['1', '2', '3', '4'];
 
@@ -16,17 +17,34 @@ export default function GoalPlannerScreen() {
   const [educationTarget, setEducationTarget] = useState('2500');
   const [allocated, setAllocated] = useState(false);
 
-  const totalAllocated =
-    Number(retirementTarget) + Number(emergencyTarget) +
-    Number(housingTarget) + Number(educationTarget);
-  const surplus = Number(income) - totalAllocated;
-  const feasible = surplus >= 0;
+  const allocationResult = allocateGoals({
+    monthlyIncome: Number(income) || 0,
+    goalRetirementMonthly: Number(retirementTarget) || 0,
+    goalEmergencyTarget: Number(emergencyTarget) || 0,
+    goalHousingTarget: Number(housingTarget) || 0,
+    goalEducationTarget: Number(educationTarget) || 0,
+    priorityRetirement: 4,
+    priorityEmergency: 1,
+    priorityHousing: 2,
+    priorityEducation: 3,
+  });
+
+  const surplus = allocationResult.surplus;
+  const feasible = allocationResult.feasible;
+
+  // Total targets used only for "Months to Goal" — separate from monthly allocation
+  const GOAL_TOTAL_TARGETS: Record<string, number> = {
+    'Emergency Fund': 900000,
+    'Housing': 4500000,
+    'Education': 3000000,
+    'Retirement': 0,
+  };
 
   const goals = [
-    { label: 'Emergency Fund', monthly: Number(emergencyTarget), priority: 1, target: 900000,  color: COLORS.error   },
-    { label: 'Housing',        monthly: Number(housingTarget),   priority: 2, target: 4500000, color: COLORS.warning  },
-    { label: 'Education',      monthly: Number(educationTarget), priority: 3, target: 3000000, color: '#8B5CF6'       },
-    { label: 'Retirement',     monthly: Number(retirementTarget),priority: 4, target: 0,       color: COLORS.primary  },
+    { label: 'Emergency Fund', monthly: allocationResult.emergency,  priority: 1, target: GOAL_TOTAL_TARGETS['Emergency Fund'], color: COLORS.error   },
+    { label: 'Housing',        monthly: allocationResult.housing,    priority: 2, target: GOAL_TOTAL_TARGETS['Housing'],       color: COLORS.warning  },
+    { label: 'Education',      monthly: allocationResult.education,  priority: 3, target: GOAL_TOTAL_TARGETS['Education'],     color: '#8B5CF6'       },
+    { label: 'Retirement',     monthly: allocationResult.retirement, priority: 4, target: GOAL_TOTAL_TARGETS['Retirement'],    color: COLORS.primary  },
   ];
 
   return (
@@ -172,7 +190,7 @@ export default function GoalPlannerScreen() {
               ]}>
                 {feasible
                   ? '✓ Feasible — income covers all goals'
-                  : `⚠ Shortfall of LKR ${Math.abs(surplus).toLocaleString()}/month — reduce targets or increase income`
+                  : `⚠ Shortfall of LKR ${allocationResult.shortfall.toLocaleString()}/month — reduce targets or increase income`
                 }
               </Text>
             </View>

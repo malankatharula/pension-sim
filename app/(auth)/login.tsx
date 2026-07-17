@@ -1,18 +1,34 @@
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform, ScrollView,
+  StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert,
 } from 'react-native';
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
+import { supabase } from '../../src/lib/supabase';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    // Phase 2: real Supabase auth here
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert('Missing info', 'Please enter both email and password.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Sign in failed', error.message);
+      return;
+    }
     router.replace('/(tabs)');
   };
 
@@ -75,8 +91,14 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </Link>
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleLogin}>
-            <Text style={styles.primaryBtnText}>Sign In</Text>
+          <TouchableOpacity
+            style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            <Text style={styles.primaryBtnText}>
+              {loading ? 'Signing in…' : 'Sign In'}
+            </Text>
           </TouchableOpacity>
         </View>
 

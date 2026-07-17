@@ -1,17 +1,32 @@
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, KeyboardAvoidingView, Platform,
+  StyleSheet, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
+import { supabase } from '../../src/lib/supabase';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSend = () => {
-    // Phase 2: supabase.auth.resetPasswordForEmail(email)
+  const handleSend = async () => {
+    if (!email.trim()) {
+      Alert.alert('Missing email', 'Please enter your email address.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: 'pensionsim://auth/reset',
+    });
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
     setSent(true);
   };
 
@@ -51,8 +66,14 @@ export default function ForgotPasswordScreen() {
                 autoCapitalize="none"
               />
             </View>
-            <TouchableOpacity style={styles.primaryBtn} onPress={handleSend}>
-              <Text style={styles.primaryBtnText}>Send Reset Email</Text>
+            <TouchableOpacity
+              style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
+              onPress={handleSend}
+              disabled={loading}
+            >
+              <Text style={styles.primaryBtnText}>
+                {loading ? 'Sending…' : 'Send Reset Email'}
+              </Text>
             </TouchableOpacity>
           </>
         )}

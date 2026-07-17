@@ -5,6 +5,7 @@ import {
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
+import { supabase } from '../../src/lib/supabase';
 
 export default function RegisterScreen() {
   const [fullName, setFullName] = useState('');
@@ -12,8 +13,13 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
+    if (!fullName.trim() || !email.trim()) {
+      setError('Full name and email are required');
+      return;
+    }
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -23,7 +29,22 @@ export default function RegisterScreen() {
       return;
     }
     setError('');
-    // Phase 2: real Supabase signUp here
+    setLoading(true);
+
+    const { error: signUpError } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: { full_name: fullName.trim() },
+      },
+    });
+
+    setLoading(false);
+
+    if (signUpError) {
+      setError(signUpError.message);
+      return;
+    }
     router.replace('/(tabs)');
   };
 
@@ -97,8 +118,14 @@ export default function RegisterScreen() {
             />
           </View>
 
-          <TouchableOpacity style={styles.primaryBtn} onPress={handleRegister}>
-            <Text style={styles.primaryBtnText}>Create Account</Text>
+          <TouchableOpacity
+            style={[styles.primaryBtn, loading && { opacity: 0.6 }]}
+            onPress={handleRegister}
+            disabled={loading}
+          >
+            <Text style={styles.primaryBtnText}>
+              {loading ? 'Creating account…' : 'Create Account'}
+            </Text>
           </TouchableOpacity>
         </View>
 
