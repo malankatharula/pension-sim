@@ -3,53 +3,67 @@ import {
   StyleSheet, SafeAreaView,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../src/lib/theme';
+import { supabase } from '../src/lib/supabase';
+import type { FullSimulationResult } from '../src/types/simulation';
 
-const DUMMY_SIMS = [
-  {
-    id: '1', name: 'Retirement at 50',
-    conservative: 45.6, optimistic: 63.2, dualVehicle: 60.0,
-    realValue: 6.2, contributed: 13.5, mcP50: 47.8,
-    ageRange: '25–50', rate: '6% / 10%',
-    payments: 'LKR 25K→65K', periods: 5,
-  },
-  {
-    id: '2', name: 'Early FD Plus',
-    conservative: 38.1, optimistic: 54.7, dualVehicle: 51.2,
-    realValue: 5.1, contributed: 11.2, mcP50: 40.3,
-    ageRange: '22–50', rate: '6% / 10%',
-    payments: 'LKR 20K→60K', periods: 6,
-  },
-  {
-    id: '3', name: 'Conservative Baseline',
-    conservative: 27.2, optimistic: 41.5, dualVehicle: 36.4,
-    realValue: 3.2, contributed: 13.5, mcP50: 33.1,
-    ageRange: '25–50', rate: '6% / 10%',
-    payments: 'LKR 25K (flat)', periods: 5,
-  },
-  {
-    id: '4', name: 'High Contribution Test',
-    conservative: 58.9, optimistic: 84.3, dualVehicle: 78.3,
-    realValue: 8.9, contributed: 18.0, mcP50: 62.4,
-    ageRange: '25–55', rate: '6% / 10%',
-    payments: 'LKR 40K→80K', periods: 6,
-  },
+interface CompareSim {
+  id: string;
+  name: string;
+  ageRange: string;
+  rate: string;
+  createdAt: string;
+  payments: string;
+  periods: number;
+  conservative: number;
+  optimistic: number;
+  dualVehicle: number;
+  realValue: number;
+  contributed: number;
+  mcP50: number;
+}
+
+function toCompareSim(row: {
+  id: string;
+  name: string;
+   created_at: string;
+  starting_age: number;
+  retirement_age: number;
+  annual_rate_conservative: number;
+  annual_rate_optimistic: number;
+  payments: number[];
+  results: FullSimulationResult;
+}): CompareSim {
+  const r = row.results;
+   return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    ageRange: `${row.starting_age}–${row.retirement_age}`,
+    rate: `${(row.annual_rate_conservative * 100).toFixed(0)}% / ${(row.annual_rate_optimistic * 100).toFixed(0)}%`,
+    payments: `LKR ${(row.payments[0] / 1000).toFixed(0)}K→${(row.payments[row.payments.length - 1] / 1000).toFixed(0)}K`,
+    periods: row.payments.length,
+    conservative: r.conservative.finalNominal / 1e6,
+    optimistic: r.optimistic.finalNominal / 1e6,
+    dualVehicle: r.dualVehicle.finalNominal / 1e6,
+    realValue: r.conservative.realFinal / 1e6,
+    contributed: r.conservative.totalContributed / 1e6,
+    mcP50: r.monteCarlo.p50,
+  };
+}
+
+const METRICS: { label: string; key: keyof CompareSim; format: (v: any) => string }[] = [
+  { label: 'Conservative corpus', key: 'conservative', format: v => `LKR ${v.toFixed(1)}M` },
+  { label: 'Optimistic corpus',   key: 'optimistic',   format: v => `LKR ${v.toFixed(1)}M` },
+  { label: 'Dual-vehicle corpus', key: 'dualVehicle',  format: v => `LKR ${v.toFixed(1)}M` },
+  { label: 'Real value',          key: 'realValue',    format: v => `LKR ${v.toFixed(1)}M` },
+  { label: 'Total contributed',   key: 'contributed',  format: v => `LKR ${v.toFixed(1)}M` },
+  { label: 'MC median (P50)',     key: 'mcP50',        format: v => `LKR ${v.toFixed(1)}M` },
 ];
 
-type Sim = typeof DUMMY_SIMS[0];
-
-const METRICS: { label: string; key: keyof Sim; format: (v: any) => string }[] = [
-  { label: 'Conservative corpus', key: 'conservative', format: v => `LKR ${v}M` },
-  { label: 'Optimistic corpus',   key: 'optimistic',   format: v => `LKR ${v}M` },
-  { label: 'Dual-vehicle corpus', key: 'dualVehicle',  format: v => `LKR ${v}M` },
-  { label: 'Real value',          key: 'realValue',    format: v => `LKR ${v}M` },
-  { label: 'Total contributed',   key: 'contributed',  format: v => `LKR ${v}M` },
-  { label: 'MC median (P50)',     key: 'mcP50',        format: v => `LKR ${v}M` },
-];
-
-const INPUT_ROWS: { label: string; key: keyof Sim }[] = [
+const INPUT_ROWS: { label: string; key: keyof CompareSim }[] = [
   { label: 'Age range',    key: 'ageRange'  },
   { label: 'Rate (C/O)',   key: 'rate'      },
   { label: 'Payments',     key: 'payments'  },
@@ -57,14 +71,69 @@ const INPUT_ROWS: { label: string; key: keyof Sim }[] = [
 ];
 
 export default function CompareScreen() {
-  const [planA, setPlanA] = useState<Sim>(DUMMY_SIMS[0]);
-  const [planB, setPlanB] = useState<Sim>(DUMMY_SIMS[1]);
+  const [sims, setSims] = useState<CompareSim[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [planA, setPlanA] = useState<CompareSim | null>(null);
+  const [planB, setPlanB] = useState<CompareSim | null>(null);
   const [pickerFor, setPickerFor] = useState<'A' | 'B' | null>(null);
+
+  useEffect(() => {
+    loadSims();
+  }, []);
+
+  async function loadSims() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('simulations')
+      .select('id, name, starting_age, retirement_age, annual_rate_conservative, annual_rate_optimistic, payments, results')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      const parsed = data.map((row: any) => toCompareSim(row));
+      setSims(parsed);
+      if (parsed.length >= 1) setPlanA(parsed[0]);
+      if (parsed.length >= 2) setPlanB(parsed[1]);
+    }
+    setLoading(false);
+  }
 
   const diff = (a: number, b: number) => {
     const d = a - b;
     return { val: `${d >= 0 ? '+' : ''}${d.toFixed(1)}M`, pos: d >= 0 };
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <Text style={{ textAlign: 'center', marginTop: 40, color: COLORS.textMuted }}>Loading…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (sims.length < 2) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color={COLORS.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Compare Plans</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 }}>
+          <Ionicons name="git-compare-outline" size={48} color={COLORS.textMuted} />
+          <Text style={{ fontSize: FONT.lg, fontWeight: '700', color: COLORS.textPrimary }}>
+            Need at least 2 saved plans
+          </Text>
+          <Text style={{ fontSize: FONT.md, color: COLORS.textSecondary, textAlign: 'center' }}>
+            You currently have {sims.length} saved simulation{sims.length === 1 ? '' : 's'}. Save another plan to compare.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!planA || !planB) return null;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -78,33 +147,19 @@ export default function CompareScreen() {
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Plan pickers */}
         <View style={styles.pickersRow}>
-          <PlanPicker
-            label="Plan A"
-            sim={planA}
-            color={COLORS.primary}
-            onPress={() => setPickerFor('A')}
-          />
+          <PlanPicker label="Plan A" sim={planA} color={COLORS.primary} onPress={() => setPickerFor('A')} />
           <View style={styles.vsBox}>
             <Text style={styles.vsText}>VS</Text>
           </View>
-          <PlanPicker
-            label="Plan B"
-            sim={planB}
-            color="#8B5CF6"
-            onPress={() => setPickerFor('B')}
-          />
+          <PlanPicker label="Plan B" sim={planB} color="#8B5CF6" onPress={() => setPickerFor('B')} />
         </View>
 
-        {/* Picker dropdown */}
         {pickerFor && (
           <View style={styles.pickerDropdown}>
-            <Text style={styles.pickerDropdownTitle}>
-              Select Plan {pickerFor}
-            </Text>
-            {DUMMY_SIMS.map(sim => (
-              <TouchableOpacity
+            <Text style={styles.pickerDropdownTitle}>Select Plan {pickerFor}</Text>
+            {sims.map(sim => (
+                <TouchableOpacity
                 key={sim.id}
                 style={styles.pickerOption}
                 onPress={() => {
@@ -114,13 +169,14 @@ export default function CompareScreen() {
                 }}
               >
                 <Text style={styles.pickerOptionText}>{sim.name}</Text>
-                <Text style={styles.pickerOptionSub}>Age {sim.ageRange}</Text>
+                <Text style={styles.pickerOptionSub}>
+                  Age {sim.ageRange} · {new Date(sim.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
         )}
 
-        {/* Metrics comparison */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Key Metrics</Text>
           <View style={[styles.tableRow, styles.tableHeader]}>
@@ -136,12 +192,8 @@ export default function CompareScreen() {
             return (
               <View key={label} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
                 <Text style={[styles.tdCell, { flex: 2, textAlign: 'left' }]}>{label}</Text>
-                <Text style={[styles.tdCell, { color: COLORS.primary, fontWeight: '700' }]}>
-                  {format(a)}
-                </Text>
-                <Text style={[styles.tdCell, { color: '#8B5CF6', fontWeight: '700' }]}>
-                  {format(b)}
-                </Text>
+                <Text style={[styles.tdCell, { color: COLORS.primary, fontWeight: '700' }]}>{format(a)}</Text>
+                <Text style={[styles.tdCell, { color: '#8B5CF6', fontWeight: '700' }]}>{format(b)}</Text>
                 <Text style={[styles.tdCell, { color: d.pos ? COLORS.success : COLORS.error, fontWeight: '700' }]}>
                   {d.val}
                 </Text>
@@ -150,7 +202,6 @@ export default function CompareScreen() {
           })}
         </View>
 
-        {/* Input comparison */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Input Parameters</Text>
           <View style={[styles.tableRow, styles.tableHeader]}>
@@ -165,18 +216,13 @@ export default function CompareScreen() {
             return (
               <View key={label} style={[styles.tableRow, i % 2 === 1 && styles.tableRowAlt]}>
                 <Text style={[styles.tdCell, { flex: 2, textAlign: 'left' }]}>{label}</Text>
-                <Text style={[styles.tdCell, differs && { fontWeight: '700', color: COLORS.primary }]}>
-                  {a}
-                </Text>
-                <Text style={[styles.tdCell, differs && { fontWeight: '700', color: '#8B5CF6' }]}>
-                  {b}
-                </Text>
+                <Text style={[styles.tdCell, differs && { fontWeight: '700', color: COLORS.primary }]}>{a}</Text>
+                <Text style={[styles.tdCell, differs && { fontWeight: '700', color: '#8B5CF6' }]}>{b}</Text>
               </View>
             );
           })}
         </View>
 
-        {/* Visual bar comparison */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Corpus Comparison (LKR M)</Text>
           {(['conservative', 'dualVehicle', 'optimistic'] as const).map((key) => {
@@ -184,29 +230,21 @@ export default function CompareScreen() {
             return (
               <View key={key} style={styles.barGroup}>
                 <Text style={styles.barGroupLabel}>
-                  {key === 'conservative' ? 'Conservative'
-                    : key === 'dualVehicle' ? 'Dual-Vehicle'
-                    : 'Optimistic'}
+                  {key === 'conservative' ? 'Conservative' : key === 'dualVehicle' ? 'Dual-Vehicle' : 'Optimistic'}
                 </Text>
                 <View style={styles.barRow}>
                   <Text style={styles.barPlanLabel}>A</Text>
                   <View style={styles.barTrack}>
-                    <View style={[
-                      styles.barFill,
-                      { width: `${((planA[key] as number) / maxVal) * 100}%`, backgroundColor: COLORS.primary }
-                    ]} />
+                    <View style={[styles.barFill, { width: `${((planA[key] as number) / maxVal) * 100}%`, backgroundColor: COLORS.primary }]} />
                   </View>
-                  <Text style={styles.barValue}>{planA[key]}M</Text>
+                  <Text style={styles.barValue}>{(planA[key] as number).toFixed(1)}M</Text>
                 </View>
                 <View style={styles.barRow}>
                   <Text style={styles.barPlanLabel}>B</Text>
                   <View style={styles.barTrack}>
-                    <View style={[
-                      styles.barFill,
-                      { width: `${((planB[key] as number) / maxVal) * 100}%`, backgroundColor: '#8B5CF6' }
-                    ]} />
+                    <View style={[styles.barFill, { width: `${((planB[key] as number) / maxVal) * 100}%`, backgroundColor: '#8B5CF6' }]} />
                   </View>
-                  <Text style={styles.barValue}>{planB[key]}M</Text>
+                  <Text style={styles.barValue}>{(planB[key] as number).toFixed(1)}M</Text>
                 </View>
               </View>
             );
@@ -222,16 +260,16 @@ export default function CompareScreen() {
 function PlanPicker({
   label, sim, color, onPress,
 }: {
-  label: string; sim: Sim; color: string; onPress: () => void;
+  label: string; sim: CompareSim; color: string; onPress: () => void;
 }) {
   return (
-    <TouchableOpacity
-      style={[styles.planPicker, { borderColor: color }]}
-      onPress={onPress}
-    >
+    <TouchableOpacity style={[styles.planPicker, { borderColor: color }]} onPress={onPress}>
       <Text style={[styles.planPickerLabel, { color }]}>{label}</Text>
       <Text style={styles.planPickerName} numberOfLines={1}>{sim.name}</Text>
-      <Text style={[styles.planPickerValue, { color }]}>LKR {sim.conservative}M</Text>
+      <Text style={styles.planPickerAge}>
+        Age {sim.ageRange} · {new Date(sim.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+      </Text>
+      <Text style={[styles.planPickerValue, { color }]}>LKR {sim.conservative.toFixed(1)}M</Text>
       <Text style={styles.planPickerTap}>Tap to change ▼</Text>
     </TouchableOpacity>
   );
@@ -248,9 +286,7 @@ const styles = StyleSheet.create({
   backBtn: { width: 36, height: 36, justifyContent: 'center' },
   headerTitle: { fontSize: FONT.lg, fontWeight: '700', color: COLORS.textPrimary },
   scroll: { flex: 1, padding: 16 },
-  pickersRow: {
-    flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 16,
-  },
+  pickersRow: { flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 16 },
   planPicker: {
     flex: 1, backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md, padding: 14,
@@ -258,6 +294,7 @@ const styles = StyleSheet.create({
   },
   planPickerLabel: { fontSize: FONT.sm, fontWeight: '800', letterSpacing: 0.5 },
   planPickerName: { fontSize: FONT.md, fontWeight: '700', color: COLORS.textPrimary },
+  planPickerAge: { fontSize: FONT.sm, color: COLORS.textMuted },
   planPickerValue: { fontSize: FONT.lg, fontWeight: '900' },
   planPickerTap: { fontSize: FONT.sm, color: COLORS.textMuted },
   vsBox: {
@@ -272,14 +309,8 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     borderWidth: 1, borderColor: COLORS.border,
   },
-  pickerDropdownTitle: {
-    fontSize: FONT.base, fontWeight: '700',
-    color: COLORS.textPrimary, marginBottom: 12,
-  },
-  pickerOption: {
-    paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
+  pickerDropdownTitle: { fontSize: FONT.base, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 12 },
+  pickerOption: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   pickerOptionText: { fontSize: FONT.md, fontWeight: '600', color: COLORS.textPrimary },
   pickerOptionSub: { fontSize: FONT.sm, color: COLORS.textSecondary, marginTop: 2 },
   card: {
@@ -290,23 +321,15 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontSize: FONT.base, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 12 },
   tableRow: { flexDirection: 'row', paddingVertical: 9, paddingHorizontal: 4 },
-  tableHeader: {
-    backgroundColor: COLORS.primary, borderRadius: RADIUS.sm, marginBottom: 4,
-  },
+  tableHeader: { backgroundColor: COLORS.primary, borderRadius: RADIUS.sm, marginBottom: 4 },
   tableRowAlt: { backgroundColor: '#F8FFFE' },
   thCell: { flex: 1, fontSize: 11, fontWeight: '700', color: COLORS.white, textAlign: 'center' },
   tdCell: { flex: 1, fontSize: 11, color: COLORS.textPrimary, textAlign: 'center' },
   barGroup: { marginBottom: 14 },
-  barGroupLabel: {
-    fontSize: FONT.sm, fontWeight: '700',
-    color: COLORS.textSecondary, marginBottom: 6,
-  },
+  barGroupLabel: { fontSize: FONT.sm, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 6 },
   barRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
   barPlanLabel: { width: 16, fontSize: FONT.sm, fontWeight: '800', color: COLORS.textSecondary },
-  barTrack: {
-    flex: 1, height: 14, backgroundColor: COLORS.border,
-    borderRadius: 7, overflow: 'hidden',
-  },
+  barTrack: { flex: 1, height: 14, backgroundColor: COLORS.border, borderRadius: 7, overflow: 'hidden' },
   barFill: { height: 14, borderRadius: 7 },
   barValue: { width: 44, fontSize: FONT.sm, fontWeight: '700', color: COLORS.textPrimary },
 });
