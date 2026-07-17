@@ -8,6 +8,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
 import { useSimulationStore } from '../../src/store/simulationStore';
 import { erosionScenarios } from '../../src/engine';
+import { CorpusGrowthChart } from '../../src/components/charts/CorpusGrowthChart';
+import { MonteCarloFan } from '../../src/components/charts/MonteCarloFan';
+import { InflationErosionChart } from '../../src/components/charts/InflationErosionChart';
+
 
 const IMPACT_COLOR: Record<string, string> = {
   'Very High':   '#DC2626',
@@ -157,20 +161,15 @@ const inflationMax = inflationRow
           {ageRange} · {totalPeriods} periods · {totalContributed} contributed
         </Text>
 
-        {/* ── Section 2: Corpus Growth (placeholder chart, real values on bars) ── */}
+{/* ── Section 2: Corpus Growth ── */}
         <SectionHeader title="Corpus Growth" icon="trending-up-outline" />
         <View style={styles.chartPlaceholder}>
-          <View style={styles.chartBars}>
-            {current.conservative.periods.map((p, i) => {
-              const pct = Math.max(4, (p.closingBalance / current.optimistic.finalNominal) * 100);
-              return (
-                <View key={i} style={styles.chartBarCol}>
-                  <View style={[styles.chartBar, { height: `${pct}%` }]} />
-                  <Text style={styles.chartBarLabel}>{p.ageEnd}</Text>
-                </View>
-              );
-            })}
-          </View>
+          <CorpusGrowthChart
+            conservativePeriods={current.conservative.periods}
+            optimisticPeriods={current.optimistic.periods}
+            dualVehicleBalances={current.dualVehicle.periods.map(p => p.combinedBalance)}
+            startingAge={input.startingAge}
+          />
           <View style={styles.chartLegend}>
             {[
               { color: COLORS.primary, label: 'Conservative' },
@@ -240,27 +239,24 @@ const inflationMax = inflationRow
 
         <InsightBox text={`The dual-vehicle model adds LKR ${dualVehicleDiff}M vs the conservative single-rate model. Locking the corpus at ${(input.annualRateFdLock * 100).toFixed(0)}% FD rate is the key driver.`} />
 
-        {/* ── Section 5: Monte Carlo ── */}
+            {/* ── Section 5: Monte Carlo ── */}
         <SectionHeader title={`Monte Carlo Distribution (${input.mcIterations.toLocaleString()} runs)`} icon="shuffle-outline" />
         <View style={styles.mcBox}>
-          {[
-            { label: 'Pessimistic (P5)',  value: mc.p5,  color: COLORS.error   },
-            { label: 'Lower (P25)',       value: mc.p25, color: COLORS.warning  },
-            { label: 'Median (P50)',      value: mc.p50, color: COLORS.primary  },
-            { label: 'Upper (P75)',       value: mc.p75, color: COLORS.success  },
-            { label: 'Optimistic (P95)',  value: mc.p95, color: '#8B5CF6'       },
-          ].map(({ label, value, color }) => (
-            <View key={label} style={styles.mcRow}>
-              <Text style={styles.mcLabel}>{label}</Text>
-              <View style={styles.mcBarWrap}>
-                <View style={[
-                  styles.mcBar,
-                  { width: `${(value / mcMax) * 100}%`, backgroundColor: color }
-                ]} />
+          <MonteCarloFan p5={mc.p5} p25={mc.p25} p50={mc.p50} p75={mc.p75} p95={mc.p95} />
+          <View style={{ gap: 8, marginTop: 8 }}>
+            {[
+              { label: 'Pessimistic (P5)',  value: mc.p5,  color: COLORS.error   },
+              { label: 'Lower (P25)',       value: mc.p25, color: COLORS.warning  },
+              { label: 'Median (P50)',      value: mc.p50, color: COLORS.primary  },
+              { label: 'Upper (P75)',       value: mc.p75, color: COLORS.success  },
+              { label: 'Optimistic (P95)',  value: mc.p95, color: '#8B5CF6'       },
+            ].map(({ label, value, color }) => (
+              <View key={label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: FONT.sm, color: COLORS.textSecondary }}>{label}</Text>
+                <Text style={{ fontSize: FONT.sm, fontWeight: '700', color }}>LKR {value.toFixed(1)}M</Text>
               </View>
-              <Text style={[styles.mcValue, { color }]}>LKR {value.toFixed(1)}M</Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
         <InsightBox text={`In 9 out of 10 simulated futures, your corpus lands between LKR ${mc.p5.toFixed(1)}M and LKR ${mc.p95.toFixed(1)}M. The median outcome is LKR ${mc.p50.toFixed(1)}M.`} />
 
@@ -317,6 +313,18 @@ const inflationMax = inflationRow
               <Text style={[styles.tdCell, { flex: 1 }]}>{row.retained}</Text>
             </View>
           ))}
+        </View>
+                <SectionHeader title={`Inflation Erosion (LKR 1M over ${years} years)`} icon="flame-outline" />
+        <View style={styles.card}>
+          {/* ...existing table code stays exactly the same... */}
+        </View>
+        <View style={{ marginHorizontal: 20, marginTop: 12 }}>
+          <InflationErosionChart
+            scenarios={inflationTable.map((row) => ({
+              label: row.rate.replace(' (baseline)', '').replace(' (crisis)', ''),
+              percentRetained: parseFloat(row.retained),
+            }))}
+          />
         </View>
         <InsightBox text={`At the ${(input.inflationRate * 100).toFixed(1)}% baseline, your ${conservativeCorpus} nominal corpus has a real purchasing power of only ${realValue}. Your plan must beat inflation meaningfully.`} />
 
@@ -428,13 +436,12 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: FONT.base, fontWeight: '700', color: COLORS.textPrimary },
 
-  // Chart placeholder
   chartPlaceholder: {
     marginHorizontal: 20,
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md, padding: 16,
     borderWidth: 1, borderColor: COLORS.border,
-    height: 180,
+    overflow: 'hidden',
   },
   chartBars: {
     flex: 1, flexDirection: 'row',
