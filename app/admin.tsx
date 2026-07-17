@@ -1,44 +1,124 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, TextInput,
+  StyleSheet, SafeAreaView, TextInput, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../src/lib/theme';
+import { supabase } from '../src/lib/supabase';
+import { useAuthStore } from '../src/store/authStore';
 
-const DEFAULT_CONFIG = [
-  { key: 'default_starting_age',      value: '25',     description: 'Default age shown in wizard step 1' },
-  { key: 'default_retirement_age',    value: '50',     description: 'Default retirement age' },
-  { key: 'default_rate_conservative', value: '0.0600', description: 'Conservative annual FD rate' },
-  { key: 'default_rate_optimistic',   value: '0.1000', description: 'Optimistic annual FD rate' },
-  { key: 'default_rate_fd_lock',      value: '0.1200', description: 'FD corpus lock rate — dual vehicle' },
-  { key: 'default_rate_liquid',       value: '0.0900', description: 'Liquid savings track rate' },
-  { key: 'default_inflation_rate',    value: '0.0890', description: 'Long-run inflation baseline' },
-  { key: 'default_wht_rate',          value: '0.0500', description: 'Withholding tax on interest income' },
-  { key: 'default_mc_iterations',     value: '5000',   description: 'Monte Carlo iteration count' },
-  { key: 'default_mc_mu',             value: '0.1000', description: 'Vasicek mean rate for MC' },
-  { key: 'default_mc_sigma',          value: '0.0250', description: 'Vasicek sigma (rate volatility)' },
-];
+interface ConfigRow {
+  key: string;
+  value: string;
+  description: string | null;
+}
 
-const DUMMY_FD_BANKS = [
-  { id: '1', bank: 'Commercial Bank', term: 12, rate: '11.25', active: true },
-  { id: '2', bank: 'HNB',            term: 12, rate: '10.75', active: true },
-  { id: '3', bank: 'Sampath Bank',   term: 12, rate: '12.75', active: true },
-  { id: '4', bank: 'NSB',            term: 60, rate: '11.50', active: true },
-];
+interface FdRateRow {
+  id: string;
+  bank_name: string;
+  term_months: number;
+  rate: number;
+  min_amount: number | null;
+  is_active: boolean;
+}
 
 export default function AdminPanelScreen() {
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
-  const [saved, setSaved] = useState(false);
+  const { isAdmin, initialized } = useAuthStore();
+  const [config, setConfig] = useState<ConfigRow[]>([]);
+  const [originalConfig, setOriginalConfig] = useState<ConfigRow[]>([]);
+  const [fdRates, setFdRates] = useState<FdRateRow[]>([]);
   const [activeTab, setActiveTab] = useState<'config' | 'fd'>('config');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (isAdmin) loadData();
+  }, [isAdmin]);
+
+  async function loadData() {
+    setLoading(true);
+    const [configRes, fdRes] = await Promise.all([
+      supabase.from('app_config').select('key, value, description').order('key'),
+      supabase.from('fd_rates').select('*').order('bank_name'),
+    ]);
+    if (configRes.data) {
+      setConfig(configRes.data);
+      setOriginalConfig(configRes.data);
+    }
+    if (fdRes.data) setFdRates(fdRes.data);
+    setLoading(false);
+  }
 
   const updateConfig = (key: string, value: string) => {
-    setConfig(prev => prev.map(c => c.key === key ? { ...c, value } : c));
-    setSaved(false);
+    setConfig((prev) => prev.map((c) => (c.key === key ? { ...c, value } : c)));
   };
 
-  const handleSave = () => setSaved(true);
+  const handleSaveConfig = async () => {
+    setSaving(true);
+    const updates = config.filter((c, i) => c.value !== originalConfig[i]?.value);
+
+    for (const row of updates) {
+      const { error } = await supabase
+        .from('app_config')
+        .update({ value: row.value })
+        .eq('key', row.key);
+      if (error) {
+        setSaving(false);
+        Alert.alert('Save failed', `Error saving ${row.key}: ${error.message}`);
+        return;
+      }
+    }
+    setOriginalConfig(config);
+    setSaving(false);
+    Alert.alert('Saved', 'All config changes saved successfully.');
+  };
+
+  const handleToggleActive = async (row: FdRateRow) => {
+    const { error } = await supabase
+      .from('fd_rates')
+      .update({ is_active: !row.is_active })
+      .eq('id', row.id);
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+    setFdRates((prev) =>
+      prev.map((r) => (r.id === row.id ? { ...r, is_active: !r.is_active } : r))
+    );
+  };
+
+  if (!initialized) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <Text style={{ textAlign: 'center', marginTop: 40 }}>Loading…</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color={COLORS.white} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Admin Panel</Text>
+          <View style={{ width: 36 }} />
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 }}>
+          <Ionicons name="lock-closed-outline" size={48} color={COLORS.textMuted} />
+          <Text style={{ fontSize: FONT.lg, fontWeight: '700', color: COLORS.textPrimary }}>
+            Admin access required
+          </Text>
+          <Text style={{ fontSize: FONT.md, color: COLORS.textSecondary, textAlign: 'center' }}>
+            You don't have permission to view this page.
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -50,7 +130,6 @@ export default function AdminPanelScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      {/* Tabs */}
       <View style={styles.tabRow}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'config' && styles.tabActive]}
@@ -71,8 +150,9 @@ export default function AdminPanelScreen() {
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-
-        {activeTab === 'config' && (
+        {loading ? (
+          <Text style={{ textAlign: 'center', marginTop: 40, color: COLORS.textMuted }}>Loading…</Text>
+        ) : activeTab === 'config' ? (
           <>
             <Text style={styles.sectionNote}>
               Edit global defaults. Changes apply to all new simulations. No code deploy needed.
@@ -88,73 +168,54 @@ export default function AdminPanelScreen() {
                   style={styles.configInput}
                   value={value}
                   onChangeText={(v) => updateConfig(key, v)}
-                  keyboardType="decimal-pad"
                   placeholderTextColor={COLORS.textMuted}
                 />
               </View>
             ))}
 
-            {saved && (
-              <View style={styles.successBox}>
-                <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.success} />
-                <Text style={styles.successText}>All changes saved successfully</Text>
-              </View>
-            )}
-
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-              <Ionicons name="save-outline" size={18} color={COLORS.white} />
-              <Text style={styles.saveBtnText}>Save All Changes</Text>
-            </TouchableOpacity>
-
             <TouchableOpacity
-              style={styles.resetBtn}
-              onPress={() => { setConfig(DEFAULT_CONFIG); setSaved(false); }}
+              style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+              onPress={handleSaveConfig}
+              disabled={saving}
             >
-              <Text style={styles.resetBtnText}>Reset to Defaults</Text>
+              <Ionicons name="save-outline" size={18} color={COLORS.white} />
+              <Text style={styles.saveBtnText}>{saving ? 'Saving…' : 'Save All Changes'}</Text>
             </TouchableOpacity>
           </>
-        )}
-
-        {activeTab === 'fd' && (
+        ) : (
           <>
             <Text style={styles.sectionNote}>
               Manage FD rates displayed in the FD Rate Explorer. Toggle active/inactive to show or hide from users.
             </Text>
 
-            {DUMMY_FD_BANKS.map((row) => (
+            {fdRates.map((row) => (
               <View key={row.id} style={styles.fdRow}>
                 <View style={styles.fdRowLeft}>
                   <View style={styles.bankIcon}>
                     <Ionicons name="business-outline" size={16} color={COLORS.primary} />
                   </View>
                   <View>
-                    <Text style={styles.fdBankName}>{row.bank}</Text>
-                    <Text style={styles.fdMeta}>{row.term} months · {row.rate}%</Text>
+                    <Text style={styles.fdBankName}>{row.bank_name}</Text>
+                    <Text style={styles.fdMeta}>
+                      {row.term_months} months · {(row.rate * 100).toFixed(2)}%
+                    </Text>
                   </View>
                 </View>
-                <View style={styles.fdRowRight}>
+                <TouchableOpacity onPress={() => handleToggleActive(row)}>
                   <View style={[
                     styles.activeBadge,
-                    { backgroundColor: row.active ? '#D1FAE5' : '#F3F4F6' }
+                    { backgroundColor: row.is_active ? '#D1FAE5' : '#F3F4F6' }
                   ]}>
                     <Text style={[
                       styles.activeBadgeText,
-                      { color: row.active ? COLORS.success : COLORS.textMuted }
+                      { color: row.is_active ? COLORS.success : COLORS.textMuted }
                     ]}>
-                      {row.active ? 'Active' : 'Inactive'}
+                      {row.is_active ? 'Active' : 'Inactive'}
                     </Text>
                   </View>
-                  <TouchableOpacity style={styles.editBtn}>
-                    <Ionicons name="pencil-outline" size={16} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               </View>
             ))}
-
-            <TouchableOpacity style={styles.addBtn}>
-              <Ionicons name="add-circle-outline" size={18} color={COLORS.primary} />
-              <Text style={styles.addBtnText}>+ Add new rate</Text>
-            </TouchableOpacity>
           </>
         )}
 
@@ -206,28 +267,15 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.sm,
     paddingHorizontal: 10, paddingVertical: 8,
     fontSize: FONT.md, fontWeight: '700',
-    color: COLORS.primary, minWidth: 80, textAlign: 'right',
+    color: COLORS.primary, minWidth: 90, textAlign: 'right',
   },
-  successBox: {
-    flexDirection: 'row', gap: 8, alignItems: 'center',
-    backgroundColor: '#D1FAE5', borderRadius: RADIUS.sm,
-    padding: 12, marginBottom: 10,
-  },
-  successText: { fontSize: FONT.md, color: '#065F46', fontWeight: '600' },
   saveBtn: {
     backgroundColor: COLORS.primary,
     borderRadius: RADIUS.sm, paddingVertical: 14,
     flexDirection: 'row', justifyContent: 'center',
-    alignItems: 'center', gap: 8, marginBottom: 10,
+    alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 8,
   },
   saveBtnText: { color: COLORS.white, fontSize: FONT.base, fontWeight: '700' },
-  resetBtn: {
-    borderRadius: RADIUS.sm, paddingVertical: 13,
-    alignItems: 'center', marginBottom: 10,
-    borderWidth: 1, borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
-  },
-  resetBtnText: { fontSize: FONT.md, fontWeight: '600', color: COLORS.textSecondary },
   fdRow: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md, padding: 14,
@@ -235,30 +283,16 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'space-between',
     borderWidth: 1, borderColor: COLORS.border,
   },
-  fdRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  fdRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 8 },
   bankIcon: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: COLORS.primaryLight,
     justifyContent: 'center', alignItems: 'center',
   },
-  fdBankName: { fontSize: FONT.md, fontWeight: '700', color: COLORS.textPrimary },
+  fdBankName: { fontSize: FONT.md, fontWeight: '700', color: COLORS.textPrimary, flexShrink: 1 },
   fdMeta: { fontSize: FONT.sm, color: COLORS.textSecondary, marginTop: 2 },
-  fdRowRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   activeBadge: {
     paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
   },
   activeBadgeText: { fontSize: FONT.sm, fontWeight: '700' },
-  editBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: COLORS.primaryLight,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  addBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, paddingVertical: 14,
-    borderRadius: RADIUS.md, marginTop: 4,
-    borderWidth: 2, borderColor: COLORS.primary,
-    borderStyle: 'dashed', backgroundColor: COLORS.surface,
-  },
-  addBtnText: { fontSize: FONT.md, fontWeight: '700', color: COLORS.primary },
 });
