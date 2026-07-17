@@ -1,13 +1,14 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView,
+  StyleSheet,
 } from 'react-native';
-import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
 import { useAuthStore } from '../../src/store/authStore';
 import { useSimulationStore } from '../../src/store/simulationStore';
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 
 
 const DUMMY_LATEST = {
@@ -39,30 +40,24 @@ export default function HomeScreen() {
 
   const { savedList, loadSavedList } = useSimulationStore();
 
-  useEffect(() => {
-    loadSavedList();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadSavedList();
+    }, [])
+  );
 
   const latest = savedList[0]; // already sorted newest-first from loadSavedList
   const recentThree = savedList.slice(0, 3);
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* ── Sticky Header ── */}
+      <View style={styles.header}>
+        <Text style={styles.greeting}>Hello, {firstName} 👋</Text>
+        <Text style={styles.greetingSub}>Your retirement plan is on track</Text>
+      </View>
 
-        {/* ── Header ── */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Hello, {firstName} 👋</Text>
-            <Text style={styles.greetingSub}>Your retirement plan is on track</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => router.push('/(tabs)/settings')}
-          >
-            <Ionicons name="settings-outline" size={22} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-        </View>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
 {/* ── Latest Plan Card ── */}
         {latest ? (
@@ -200,17 +195,10 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    alignItems: 'center', paddingTop: 20, paddingBottom: 20,
+    paddingHorizontal: 20, paddingTop: 20, paddingBottom: 16,
   },
   greeting: { fontSize: FONT.xl, fontWeight: '700', color: COLORS.textPrimary },
   greetingSub: { fontSize: FONT.sm, color: COLORS.textSecondary, marginTop: 2 },
-  settingsBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: COLORS.surface,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1, borderColor: COLORS.border,
-  },
 
   // Latest card
   latestCard: {

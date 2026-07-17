@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Stack, Redirect } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { supabase } from '../src/lib/supabase';
 import { useAuthStore } from '../src/store/authStore';
 import { COLORS } from '../src/lib/theme';
@@ -46,14 +47,16 @@ export default function RootLayout() {
 
   if (!initialized) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
+      <SafeAreaProvider>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.background }}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
@@ -63,8 +66,10 @@ export default function RootLayout() {
         <Stack.Screen name="inflation-calc" />
         <Stack.Screen name="fd-rates" />
         <Stack.Screen name="admin" />
+        <Stack.Screen name="privacy-policy" />
+        <Stack.Screen name="terms-of-use" />
       </Stack>
       {!session && <Redirect href="/(auth)/login" />}
-    </>
+    </SafeAreaProvider>
   );
 }

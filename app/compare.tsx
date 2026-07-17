@@ -1,9 +1,10 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView,
+  StyleSheet,
 } from 'react-native';
-import { router } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
+import { useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../src/lib/theme';
 import { supabase } from '../src/lib/supabase';
@@ -77,9 +78,11 @@ export default function CompareScreen() {
   const [planB, setPlanB] = useState<CompareSim | null>(null);
   const [pickerFor, setPickerFor] = useState<'A' | 'B' | null>(null);
 
-  useEffect(() => {
-    loadSims();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadSims();
+    }, [])
+  );
 
   async function loadSims() {
     setLoading(true);

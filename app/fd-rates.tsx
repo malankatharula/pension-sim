@@ -1,9 +1,10 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView,
+  StyleSheet,
 } from 'react-native';
-import { router } from 'expo-router';
-import { useState, useEffect, useMemo } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
+import { useState, useCallback, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../src/lib/theme';
 import { supabase } from '../src/lib/supabase';
@@ -30,9 +31,11 @@ export default function FDRateExplorerScreen() {
   const [rates, setRates] = useState<FdRateRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchRates();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchRates();
+    }, [])
+  );
 
   async function fetchRates() {
     setLoading(true);

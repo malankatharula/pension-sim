@@ -8,26 +8,26 @@ A React Native (Expo) mobile app that models long-term retirement savings for th
 
 ## Implementation Status
 
+**All 16 screens are fully wired to real math, real auth, and real Supabase data. No dummy/placeholder data remains anywhere in the app.**
+
 | Phase | Area | Status |
 |---|---|---|
-| 1 | UI scaffolding — all 16 screens, dummy data | ✅ Complete |
+| 1 | UI scaffolding — all 16 screens | ✅ Complete |
 | 2.1 | Math engine (chained annuity, dual-vehicle, Monte Carlo, sensitivity, goal programming, inflation) | ✅ Complete — verified against the case study to the exact rupee |
 | 2.2 | Supabase — schema, RLS policies, seed data, client singleton | ✅ Complete |
 | 2.3 | Real authentication (signup, login, password reset, session persistence) | ✅ Complete |
 | 2.4 | Save/load simulations (Results, History, Home dashboard) | ✅ Complete |
 | 2.5 | Victory Native charts (corpus growth, Monte Carlo, inflation erosion) | ✅ Complete |
-| — | Goal Planner wired to real `allocateGoals()` engine | ✅ Complete |
-| — | Inflation Calculator wired to real `inflationErosion()` engine | ✅ Complete |
-| — | FD Rate Explorer — reads live Supabase data | ⏳ Not yet wired (still Phase 1 dummy data) |
-| — | Admin Panel — config/FD rate CRUD | ⏳ Not yet wired (still Phase 1 dummy data) |
-| — | Compare Simulations screen | ⏳ Not yet wired (still Phase 1 dummy data) |
+| 2.6 | Remaining screens — FD Rate Explorer, Admin Panel, Compare Simulations, Settings | ✅ Complete |
 | v2 | Push notifications | Not started |
 | v2 | PDF export | Not started |
+| v2 | Full deep-link password reset (requires native build, not just Expo Go) | Partially configured — reset emails send correctly; completing the reset via the emailed link requires a native build with the `pensionsim://` scheme registered |
 
 **Known deviations from the original spec:**
 - Goal Programming allocator uses a **greedy priority-order allocator**, not a full LP/Simplex solver — mathematically equivalent output for this use case.
 - `simulationStore.ts` also handles Supabase save/load/delete directly rather than a separate service layer — kept simple.
-
+- `currency_symbol` config value exists in `app_config` and is editable via the Admin Panel, but is not yet consumed anywhere in the UI — every screen displays "LKR" directly, which is appropriate given the project's Sri Lanka-specific scope.
+- Admin Panel's FD Rate Manager supports viewing and toggling active/inactive status; full add/edit/delete forms were not built (scope trim — toggling covers the main use case of hiding outdated rates).
 ---
 
 ## Setup

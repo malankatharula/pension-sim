@@ -1,9 +1,10 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, TextInput, Alert,
+  StyleSheet, TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { router } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
+import { useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../src/lib/theme';
 import { supabase } from '../src/lib/supabase';
@@ -33,9 +34,11 @@ export default function AdminPanelScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (isAdmin) loadData();
-  }, [isAdmin]);
+  useFocusEffect(
+    useCallback(() => {
+      if (isAdmin) loadData();
+    }, [isAdmin])
+  );
 
   async function loadData() {
     setLoading(true);
@@ -122,6 +125,10 @@ export default function AdminPanelScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={COLORS.white} />
@@ -149,7 +156,7 @@ export default function AdminPanelScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {loading ? (
           <Text style={{ textAlign: 'center', marginTop: 40, color: COLORS.textMuted }}>Loading…</Text>
         ) : activeTab === 'config' ? (
@@ -221,6 +228,7 @@ export default function AdminPanelScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

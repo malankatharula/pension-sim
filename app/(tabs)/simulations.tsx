@@ -1,10 +1,11 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, TextInput, Alert,
+  StyleSheet, TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
 import { useSimulationStore } from '../../src/store/simulationStore';
 
@@ -19,9 +20,11 @@ export default function SimulationsScreen() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortKey>('Newest');
 
-  useEffect(() => {
-    loadSavedList();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadSavedList();
+    }, [])
+  );
 
   const filtered = useMemo(() => {
     let list = savedList.filter((s) =>
@@ -53,6 +56,10 @@ export default function SimulationsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>My Simulations</Text>
         <TouchableOpacity
@@ -89,7 +96,7 @@ export default function SimulationsScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {loadingList ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptySubtitle}>Loading…</Text>
@@ -143,6 +150,7 @@ export default function SimulationsScreen() {
         )}
         <View style={{ height: 40 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

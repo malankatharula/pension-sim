@@ -1,9 +1,10 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, TextInput, Alert,
+  StyleSheet, TextInput, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { router } from 'expo-router';
-import { useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
+import { useState, useCallback } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
 import { supabase } from '../../src/lib/supabase';
@@ -16,6 +17,20 @@ export default function SettingsScreen() {
   const [nameInput, setNameInput] = useState(profile?.full_name ?? '');
   const [savingName, setSavingName] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single()
+        .then(({ data, error }) => {
+          if (!error && data) setProfile(data);
+        });
+    }, [user?.id])
+  );
 
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User';
   const initials = displayName
@@ -92,11 +107,15 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
 
-      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* Profile card */}
         <View style={styles.profileCard}>
@@ -169,8 +188,8 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>ABOUT</Text>
         <View style={styles.menuCard}>
           <SettingsRow icon="information-circle-outline" label="App version" value="1.0.0" tappable={false} />
-          <SettingsRow icon="shield-outline" label="Privacy policy" onPress={() => {}} />
-          <SettingsRow icon="document-outline" label="Terms of use" onPress={() => {}} last />
+          <SettingsRow icon="shield-outline" label="Privacy policy" onPress={() => router.push('/privacy-policy')} />
+          <SettingsRow icon="document-outline" label="Terms of use" onPress={() => router.push('/terms-of-use')} last />
         </View>
 
         {/* Admin link — only shown to admins */}
@@ -196,6 +215,7 @@ export default function SettingsScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
