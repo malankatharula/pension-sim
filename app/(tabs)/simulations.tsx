@@ -1,29 +1,55 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, TextInput,
+  StyleSheet, SafeAreaView, TextInput, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
-
-const DUMMY_SIMS = [
-  { id: '1', name: 'Retirement at 50',      date: 'Jun 2026', ageRange: '25–50', conservative: 'LKR 45.6M', dualVehicle: 'LKR 60.0M' },
-  { id: '2', name: 'Early FD Plus',         date: 'May 2026', ageRange: '22–50', conservative: 'LKR 38.1M', dualVehicle: 'LKR 51.2M' },
-  { id: '3', name: 'Conservative Baseline', date: 'Apr 2026', ageRange: '25–50', conservative: 'LKR 27.2M', dualVehicle: 'LKR 36.4M' },
-  { id: '4', name: 'High Contribution Test',date: 'Mar 2026', ageRange: '25–55', conservative: 'LKR 58.9M', dualVehicle: 'LKR 78.3M' },
-  { id: '5', name: 'Delayed Start Scenario',date: 'Feb 2026', ageRange: '30–55', conservative: 'LKR 33.5M', dualVehicle: 'LKR 44.1M' },
-];
+import { useSimulationStore } from '../../src/store/simulationStore';
 
 type SortKey = 'Newest' | 'Oldest' | 'Highest Corpus';
 
+const fmtM = (n: number) => (n / 1e6).toFixed(1);
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
 export default function SimulationsScreen() {
+  const { savedList, loadingList, loadSavedList, deleteById } = useSimulationStore();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortKey>('Newest');
 
-  const filtered = DUMMY_SIMS.filter(s =>
-    s.name.toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    loadSavedList();
+  }, []);
+
+  const filtered = useMemo(() => {
+    let list = savedList.filter((s) =>
+      s.name.toLowerCase().includes(search.toLowerCase())
+    );
+    if (sort === 'Newest') {
+      list = [...list].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    } else if (sort === 'Oldest') {
+      list = [...list].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
+    } else {
+      list = [...list].sort((a, b) => b.conservativeFinal - a.conservativeFinal);
+    }
+    return list;
+  }, [savedList, search, sort]);
+
+  const handleDelete = (id: string, name: string) => {
+    Alert.alert('Delete plan?', `Delete "${name}"? This can't be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const { error } = await deleteById(id);
+          if (error) Alert.alert('Delete failed', error);
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -38,7 +64,6 @@ export default function SimulationsScreen() {
       </View>
 
       <View style={styles.controls}>
-        {/* Search */}
         <View style={styles.searchRow}>
           <Ionicons name="search-outline" size={18} color={COLORS.textMuted} />
           <TextInput
@@ -49,9 +74,8 @@ export default function SimulationsScreen() {
             onChangeText={setSearch}
           />
         </View>
-        {/* Sort pills */}
         <View style={styles.sortRow}>
-          {(['Newest', 'Oldest', 'Highest Corpus'] as SortKey[]).map(s => (
+          {(['Newest', 'Oldest', 'Highest Corpus'] as SortKey[]).map((s) => (
             <TouchableOpacity
               key={s}
               style={[styles.sortPill, sort === s && styles.sortPillActive]}
@@ -66,18 +90,27 @@ export default function SimulationsScreen() {
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        {filtered.length === 0 ? (
+        {loadingList ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptySubtitle}>Loading…</Text>
+          </View>
+        ) : filtered.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="bar-chart-outline" size={48} color={COLORS.textMuted} />
-            <Text style={styles.emptyTitle}>No plans found</Text>
-            <Text style={styles.emptySubtitle}>Try a different search term</Text>
+            <Text style={styles.emptyTitle}>
+              {savedList.length === 0 ? 'No saved plans yet' : 'No plans found'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {savedList.length === 0 ? 'Tap + to create your first' : 'Try a different search term'}
+            </Text>
           </View>
         ) : (
           filtered.map((sim) => (
             <TouchableOpacity
               key={sim.id}
               style={styles.simCard}
-              onPress={() => router.push('/simulation/results')}
+              onPress={() => router.push({ pathname: '/simulation/results', params: { id: sim.id } })}
+              onLongPress={() => handleDelete(sim.id, sim.name)}
             >
               <View style={styles.simCardTop}>
                 <View style={styles.simIconBox}>
@@ -85,19 +118,23 @@ export default function SimulationsScreen() {
                 </View>
                 <View style={styles.simInfo}>
                   <Text style={styles.simName}>{sim.name}</Text>
-                  <Text style={styles.simMeta}>Age {sim.ageRange} · {sim.date}</Text>
+                  <Text style={styles.simMeta}>
+                    Age {sim.startingAge}–{sim.retirementAge} · {fmtDate(sim.createdAt)}
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
+                <TouchableOpacity onPress={() => handleDelete(sim.id, sim.name)} style={{ padding: 4 }}>
+                  <Ionicons name="trash-outline" size={18} color={COLORS.error} />
+                </TouchableOpacity>
               </View>
               <View style={styles.simCardBottom}>
                 <View style={styles.corpusBadge}>
                   <Text style={styles.corpusBadgeLabel}>Conservative</Text>
-                  <Text style={styles.corpusBadgeValue}>{sim.conservative}</Text>
+                  <Text style={styles.corpusBadgeValue}>LKR {fmtM(sim.conservativeFinal)}M</Text>
                 </View>
                 <View style={[styles.corpusBadge, { borderColor: '#8B5CF6' }]}>
                   <Text style={styles.corpusBadgeLabel}>Dual-Vehicle</Text>
                   <Text style={[styles.corpusBadgeValue, { color: '#8B5CF6' }]}>
-                    {sim.dualVehicle}
+                    LKR {fmtM(sim.dualVehicleFinal)}M
                   </Text>
                 </View>
               </View>

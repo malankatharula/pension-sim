@@ -6,7 +6,8 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
 import { useAuthStore } from '../../src/store/authStore';
-
+import { useSimulationStore } from '../../src/store/simulationStore';
+import { useEffect } from 'react';
 
 
 const DUMMY_LATEST = {
@@ -36,6 +37,15 @@ export default function HomeScreen() {
   const { profile, user } = useAuthStore();
   const firstName = profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0] || 'there';
 
+  const { savedList, loadSavedList } = useSimulationStore();
+
+  useEffect(() => {
+    loadSavedList();
+  }, []);
+
+  const latest = savedList[0]; // already sorted newest-first from loadSavedList
+  const recentThree = savedList.slice(0, 3);
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
@@ -54,30 +64,45 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ── Latest Plan Card ── */}
-        <View style={styles.latestCard}>
-          <View style={styles.latestCardHeader}>
-            <Text style={styles.latestCardLabel}>YOUR LATEST PLAN</Text>
-            <TouchableOpacity onPress={() => router.push('/simulation/results')}>
-              <Text style={styles.viewLink}>View →</Text>
+{/* ── Latest Plan Card ── */}
+        {latest ? (
+          <View style={styles.latestCard}>
+            <View style={styles.latestCardHeader}>
+              <Text style={styles.latestCardLabel}>YOUR LATEST PLAN</Text>
+              <TouchableOpacity onPress={() => router.push({ pathname: '/simulation/results', params: { id: latest.id } })}>
+                <Text style={styles.viewLink}>View →</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.latestCardName}>{latest.name}</Text>
+            <Text style={styles.latestCardDate}>
+              Created {new Date(latest.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </Text>
+            <View style={styles.corpusRow}>
+              <View style={styles.corpusItem}>
+                <Text style={styles.corpusValue}>LKR {(latest.conservativeFinal / 1e6).toFixed(1)}M</Text>
+                <Text style={styles.corpusLabel}>Conservative</Text>
+              </View>
+              <View style={styles.corpusDivider} />
+              <View style={styles.corpusItem}>
+                <Text style={[styles.corpusValue, { color: COLORS.warning }]}>
+                  LKR {(latest.dualVehicleFinal / 1e6).toFixed(1)}M
+                </Text>
+                <Text style={styles.corpusLabel}>Dual-Vehicle</Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.latestCard}>
+            <Text style={styles.latestCardLabel}>NO PLANS YET</Text>
+            <Text style={styles.latestCardName}>Create your first plan</Text>
+            <TouchableOpacity
+              style={{ marginTop: 12, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: RADIUS.sm, paddingVertical: 10, alignItems: 'center' }}
+              onPress={() => router.push('/simulation/new')}
+            >
+              <Text style={{ color: COLORS.white, fontWeight: '700' }}>New Simulation</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.latestCardName}>{DUMMY_LATEST.name}</Text>
-          <Text style={styles.latestCardDate}>Created {DUMMY_LATEST.createdAt}</Text>
-          <View style={styles.corpusRow}>
-            <View style={styles.corpusItem}>
-              <Text style={styles.corpusValue}>{DUMMY_LATEST.conservativeCorpus}</Text>
-              <Text style={styles.corpusLabel}>Nominal Corpus</Text>
-            </View>
-            <View style={styles.corpusDivider} />
-            <View style={styles.corpusItem}>
-              <Text style={[styles.corpusValue, { color: COLORS.warning }]}>
-                {DUMMY_LATEST.realCorpus}
-              </Text>
-              <Text style={styles.corpusLabel}>Real Value</Text>
-            </View>
-          </View>
-        </View>
+        )}
 
         {/* ── Quick Actions ── */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -112,11 +137,11 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {DUMMY_SIMULATIONS.map((sim) => (
+{recentThree.length === 0 ? null : recentThree.map((sim) => (
           <TouchableOpacity
             key={sim.id}
             style={styles.simRow}
-            onPress={() => router.push('/simulation/results')}
+            onPress={() => router.push({ pathname: '/simulation/results', params: { id: sim.id } })}
           >
             <View style={styles.simRowLeft}>
               <View style={styles.simIcon}>
@@ -124,11 +149,13 @@ export default function HomeScreen() {
               </View>
               <View>
                 <Text style={styles.simName}>{sim.name}</Text>
-                <Text style={styles.simDate}>{sim.date}</Text>
+                <Text style={styles.simDate}>
+                  {new Date(sim.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                </Text>
               </View>
             </View>
             <View style={styles.simRowRight}>
-              <Text style={styles.simCorpus}>{sim.corpus}</Text>
+              <Text style={styles.simCorpus}>LKR {(sim.conservativeFinal / 1e6).toFixed(1)}M</Text>
               <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
             </View>
           </TouchableOpacity>

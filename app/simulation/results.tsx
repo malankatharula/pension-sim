@@ -1,8 +1,9 @@
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView,
+  StyleSheet, SafeAreaView, Alert,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../../src/lib/theme';
 import { useSimulationStore } from '../../src/store/simulationStore';
@@ -20,7 +21,26 @@ const fmtNum = (n: number) => Math.round(n).toLocaleString();
 const fmtM = (n: number) => (n / 1e6).toFixed(2);
 
 export default function SimulationResultsScreen() {
-  const { current, planName } = useSimulationStore();
+  const params = useLocalSearchParams();
+  const { current, planName, loadById } = useSimulationStore();
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (params.id && typeof params.id === 'string') {
+      loadById(params.id);
+    }
+  }, [params.id]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const { error } = await useSimulationStore.getState().saveCurrent();
+    setSaving(false);
+    if (error) {
+      Alert.alert('Save failed', error);
+    } else {
+      Alert.alert('Saved!', 'Your simulation has been saved to your account.');
+    }
+  };
 
   if (!current) {
     return (
@@ -302,9 +322,9 @@ const inflationMax = inflationRow
 
         {/* ── Action Bar ── */}
         <View style={styles.actionBar}>
-          <TouchableOpacity style={styles.actionBtn}>
+          <TouchableOpacity style={styles.actionBtn} onPress={handleSave} disabled={saving}>
             <Ionicons name="save-outline" size={18} color={COLORS.primary} />
-            <Text style={styles.actionBtnText}>Save</Text>
+            <Text style={styles.actionBtnText}>{saving ? 'Saving…' : 'Save'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionBtn}>
             <Ionicons name="share-outline" size={18} color={COLORS.primary} />
