@@ -3,27 +3,10 @@ import {
   StyleSheet, SafeAreaView,
 } from 'react-native';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '../src/lib/theme';
-
-const FD_RATES = [
-  { bank: 'Commercial Bank',    term: 12, rate: 11.25, min: 'LKR 10,000',  notes: 'Auto-roll available' },
-  { bank: 'HNB',               term: 12, rate: 10.75, min: 'LKR 25,000',  notes: 'Senior citizen +0.5%' },
-  { bank: 'Sampath Bank',      term: 12, rate: 12.75, min: 'LKR 50,000',  notes: 'Online FD rate' },
-  { bank: 'DFCC Bank',         term: 12, rate: 12.50, min: 'LKR 10,000',  notes: 'eFixed Deposit' },
-  { bank: "People's Bank",     term: 12, rate: 10.50, min: 'LKR 5,000',   notes: 'State bank guarantee' },
-  { bank: 'Bank of Ceylon',    term: 12, rate: 11.00, min: 'LKR 10,000',  notes: 'State bank guarantee' },
-  { bank: 'Commercial Bank',   term: 60, rate: 10.50, min: 'LKR 10,000',  notes: '5-year term' },
-  { bank: 'NSB',               term: 60, rate: 11.50, min: 'LKR 500',     notes: 'Govt guarantee; no max SLDIS cap' },
-  { bank: 'Sampath Bank',      term: 60, rate: 11.75, min: 'LKR 50,000',  notes: '5-year lock' },
-  { bank: 'HNB',               term: 60, rate: 10.25, min: 'LKR 25,000',  notes: '5-year term' },
-  { bank: 'Commercial Bank',   term: 24, rate: 11.00, min: 'LKR 10,000',  notes: '2-year term' },
-  { bank: 'DFCC Bank',         term: 24, rate: 12.00, min: 'LKR 10,000',  notes: 'Online rate' },
-  { bank: 'NSB',               term: 24, rate: 11.25, min: 'LKR 500',     notes: 'Govt guarantee' },
-  { bank: 'Sampath Bank',      term: 36, rate: 12.00, min: 'LKR 50,000',  notes: '3-year term' },
-  { bank: 'HNB',               term: 36, rate: 10.50, min: 'LKR 25,000',  notes: '3-year term' },
-];
+import { supabase } from '../src/lib/supabase';
 
 const TERMS = [
   { label: '1 Year', months: 12 },
@@ -32,12 +15,51 @@ const TERMS = [
   { label: '5 Year', months: 60 },
 ];
 
+interface FdRateRow {
+  id: string;
+  bank_name: string;
+  term_months: number;
+  rate: number;
+  min_amount: number | null;
+  notes: string | null;
+  as_of_date: string;
+}
+
 export default function FDRateExplorerScreen() {
   const [selectedTerm, setSelectedTerm] = useState(12);
+  const [rates, setRates] = useState<FdRateRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = FD_RATES
-    .filter(r => r.term === selectedTerm)
-    .sort((a, b) => b.rate - a.rate);
+  useEffect(() => {
+    fetchRates();
+  }, []);
+
+  async function fetchRates() {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('fd_rates')
+      .select('*')
+      .eq('is_active', true);
+
+    if (!error && data) {
+      setRates(data);
+    }
+    setLoading(false);
+  }
+
+  const filtered = useMemo(
+    () =>
+      rates
+        .filter((r) => r.term_months === selectedTerm)
+        .sort((a, b) => b.rate - a.rate),
+    [rates, selectedTerm]
+  );
+
+  const lastUpdated = useMemo(() => {
+    if (rates.length === 0) return '—';
+    const latest = rates.reduce((max, r) => (r.as_of_date > max ? r.as_of_date : max), rates[0].as_of_date);
+    return new Date(latest).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [rates]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -47,7 +69,7 @@ export default function FDRateExplorerScreen() {
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>FD Rate Explorer</Text>
-          <Text style={styles.headerSub}>Last updated: July 2026</Text>
+          <Text style={styles.headerSub}>Last updated: {lastUpdated}</Text>
         </View>
         <View style={{ width: 36 }} />
       </View>
@@ -68,32 +90,47 @@ export default function FDRateExplorerScreen() {
       </View>
 
       <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
-        {filtered.map((row, i) => (
-          <View key={i} style={[styles.rateCard, i === 0 && styles.rateCardBest]}>
-            {i === 0 && (
-              <View style={styles.bestBadge}>
-                <Text style={styles.bestBadgeText}>Best Rate</Text>
-              </View>
-            )}
-            <View style={styles.rateCardTop}>
-              <View style={styles.bankInfo}>
-                <View style={styles.bankIcon}>
-                  <Ionicons name="business-outline" size={18} color={COLORS.primary} />
-                </View>
-                <View>
-                  <Text style={styles.bankName}>{row.bank}</Text>
-                  <Text style={styles.bankMin}>Min: {row.min}</Text>
-                </View>
-              </View>
-              <Text style={[styles.rateValue, i === 0 && { color: COLORS.primary }]}>
-                {row.rate.toFixed(2)}%
-              </Text>
-            </View>
-            {row.notes ? (
-              <Text style={styles.rateNotes}>{row.notes}</Text>
-            ) : null}
+        {loading ? (
+          <Text style={{ textAlign: 'center', color: COLORS.textMuted, marginTop: 40 }}>
+            Loading rates…
+          </Text>
+        ) : filtered.length === 0 ? (
+          <View style={{ alignItems: 'center', marginTop: 40, gap: 8 }}>
+            <Ionicons name="business-outline" size={40} color={COLORS.textMuted} />
+            <Text style={{ color: COLORS.textSecondary, fontWeight: '600' }}>
+              No rates available for this term yet
+            </Text>
           </View>
-        ))}
+        ) : (
+          filtered.map((row, i) => (
+            <View key={row.id} style={[styles.rateCard, i === 0 && styles.rateCardBest]}>
+              {i === 0 && (
+                <View style={styles.bestBadge}>
+                  <Text style={styles.bestBadgeText}>Best Rate</Text>
+                </View>
+              )}
+              <View style={styles.rateCardTop}>
+                <View style={styles.bankInfo}>
+                  <View style={styles.bankIcon}>
+                    <Ionicons name="business-outline" size={18} color={COLORS.primary} />
+                  </View>
+                  <View>
+                    <Text style={styles.bankName}>{row.bank_name}</Text>
+                    <Text style={styles.bankMin}>
+                      Min: {row.min_amount ? `LKR ${row.min_amount.toLocaleString()}` : '—'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.rateValue, i === 0 && { color: COLORS.primary }]}>
+                  {(row.rate * 100).toFixed(2)}%
+                </Text>
+              </View>
+              {row.notes ? (
+                <Text style={styles.rateNotes}>{row.notes}</Text>
+              ) : null}
+            </View>
+          ))
+        )}
 
         {/* Disclaimer */}
         <View style={styles.disclaimer}>
@@ -154,13 +191,13 @@ const styles = StyleSheet.create({
   rateCardTop: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  bankInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  bankInfo: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 8 },
   bankIcon: {
     width: 40, height: 40, borderRadius: 20,
     backgroundColor: COLORS.primaryLight,
     justifyContent: 'center', alignItems: 'center',
   },
-  bankName: { fontSize: FONT.base, fontWeight: '700', color: COLORS.textPrimary },
+  bankName: { fontSize: FONT.base, fontWeight: '700', color: COLORS.textPrimary, flexShrink: 1 },
   bankMin: { fontSize: FONT.sm, color: COLORS.textSecondary, marginTop: 2 },
   rateValue: { fontSize: FONT.xxl, fontWeight: '900', color: COLORS.textPrimary },
   rateNotes: { fontSize: FONT.sm, color: COLORS.textSecondary, marginTop: 8 },
